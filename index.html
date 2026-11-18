@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="LED 灯牌">
+  <meta name="description" content="把手机变成全屏 LED 灯牌，支持点阵、滚动、横屏和常亮。">
+  <title>LED 手持灯牌</title>
+  <link rel="icon" type="image/svg+xml" sizes="any" id="app-icon">
+  <link rel="apple-touch-icon" sizes="any" id="touch-icon">
+  <link rel="manifest" id="app-manifest">
+  <script>
+    // The icon, manifest and iOS bitmap fallback are all produced by this HTML.
+    (() => {
+      const glyphs = [
+        ['100','100','100','100','111'],
+        ['111','100','110','100','111'],
+        ['110','101','101','101','110']
+      ];
+      const pixels = glyphs.flatMap((glyph, letter) => glyph.flatMap((row, y) =>
+        [...row].flatMap((bit, x) => bit === '1'
+          ? ['<circle cx="' + (96 + (letter * 4 + x) * 32) + '" cy="' + (192 + y * 32) + '" r="11"/>']
+          : [])
+      )).join('');
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">' +
+        '<defs><filter id="g" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="11"/></filter></defs>' +
+        '<rect width="512" height="512" fill="#000"/><rect x="52" y="146" width="408" height="220" rx="40" fill="#13090e" stroke="#442036" stroke-width="5"/>' +
+        '<g fill="#ff21a1" filter="url(#g)">' + pixels + '</g><g fill="#ff81c7">' + pixels + '</g></svg>';
+      const icon = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      document.getElementById('app-icon').href = icon;
+      document.getElementById('touch-icon').href = icon;
+
+      // A data: manifest has no directory to resolve relative URLs against.
+      const start = new URL(location.href);
+      start.search = '';
+      start.hash = '';
+      if (start.pathname.endsWith('/index.html')) start.pathname = start.pathname.slice(0, -10);
+      const manifest = {
+        id: start.href,
+        name: 'LED 手持灯牌',
+        short_name: 'LED 灯牌',
+        description: '全屏点阵滚动灯牌',
+        lang: 'zh-CN',
+        start_url: start.href,
+        scope: new URL('.', start).href,
+        display: 'fullscreen',
+        background_color: '#000000',
+        theme_color: '#000000',
+        icons: [
+          { src: icon, sizes: '512x512', type: 'image/svg+xml', purpose: 'any' }
+        ]
+      };
+      const manifestLink = document.getElementById('app-manifest');
+      function setManifest() {
+        manifestLink.href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifest));
+      }
+      const image = new Image();
+      image.onload = () => {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        if (!context) {
+          setManifest();
+          return;
+        }
+        function bitmap(size) {
+          canvas.width = canvas.height = size;
+          context.drawImage(image, 0, 0, size, size);
+          return canvas.toDataURL('image/png');
+        }
+        for (const size of [192, 512]) {
+          manifest.icons.unshift({ src: bitmap(size), sizes: size + 'x' + size, type: 'image/png', purpose: 'any' });
+        }
+        setManifest();
+        const touchIcon = document.createElement('link');
+        touchIcon.rel = 'apple-touch-icon';
+        touchIcon.sizes = '180x180';
+        touchIcon.href = bitmap(180);
+        document.head.append(touchIcon);
+      };
+      image.onerror = setManifest;
+      image.src = icon;
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page-w: 100vw;
+      --page-h: 100vh;
+      --top: env(safe-area-inset-top, 0px);
+      --right: env(safe-area-inset-right, 0px);
+      --bottom: env(safe-area-inset-bottom, 0px);
+      --left: env(safe-area-inset-left, 0px);
+      --ink: #f5eee9;
+      --muted: #b4a5ac;
+      --line: #393035;
+      --accent: #ff86c5;
+      --button: #262026;
+      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #000;
+      color: var(--ink);
+    }
+    @supports (height: 100dvh) {
+      :root { --page-w: 100dvw; --page-h: 100dvh; }
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; overscroll-behavior: none; }
+    button, input { color: inherit; font: inherit; }
+    button { cursor: pointer; }
+    button, input, label { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, input:focus-visible, .custom-color:focus-within {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+    [hidden] { display: none !important; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .app {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: var(--page-w);
+      height: var(--page-h);
+      overflow: hidden;
+      isolation: isolate;
+      --safe-top: var(--top);
+      --safe-right: var(--right);
+      --safe-bottom: var(--bottom);
+      --safe-left: var(--left);
+      --preview-top: calc(var(--safe-top) + 52px);
+      --preview-bottom: calc(var(--safe-bottom) + 398px);
+      --panel-cap: calc(100% - var(--safe-top) - var(--safe-bottom) - 84px);
+    }
+    .app.rotated {
+      width: var(--page-h);
+      height: var(--page-w);
+      transform-origin: top left;
+      transform: translateX(var(--page-w)) rotate(90deg);
+      --safe-top: var(--right);
+      --safe-right: var(--bottom);
+      --safe-bottom: var(--left);
+      --safe-left: var(--top);
+    }
+    .stage, .display, .screen-toggle { position: absolute; inset: 0; }
+    .stage { background: #000; }
+    .display {
+      overflow: hidden;
+      pointer-events: none;
+      color: var(--led, #ff54af);
+      --dot: 7px;
+    }
+    .row {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 100%;
+      transform: translateY(-50%);
+    }
+    .track {
+      display: flex;
+      align-items: center;
+      width: max-content;
+      direction: ltr;
+    }
+    .moving .track { will-change: transform; }
+    .led-text {
+      margin: 0;
+      font-family: "Arial Black", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+      font-size: var(--font-size, 120px);
+      font-weight: 900;
+      line-height: 1.12;
+      letter-spacing: .025em;
+      text-shadow: 0 0 .018em currentColor, 0 0 .06em currentColor, 0 0 .16em currentColor, 0 0 .29em currentColor;
+      unicode-bidi: plaintext;
+      tab-size: 4;
+    }
+    .still {
+      margin-inline: max(15px, var(--safe-left), var(--safe-right));
+      text-align: center;
+      white-space: break-spaces;
+      overflow-wrap: anywhere;
+    }
+    .tile, .measure {
+      display: block;
+      flex: none;
+      white-space: pre;
+    }
+    .measure {
+      position: absolute;
+      visibility: hidden;
+      inline-size: max-content;
+    }
+    .mask {
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(circle at center, #0000 0 34%, #0006 40%, #000e 54%, #000 68%);
+      background-size: var(--dot) var(--dot);
+    }
+    .breathe .row { animation: breathe 2.8s ease-in-out infinite; }
+    .flash .row { animation: flash .46s steps(1, end) infinite; }
+    @keyframes breathe { 50% { opacity: .42; } }
+    @keyframes flash { 52% { opacity: .38; } }
+    @media (prefers-reduced-motion: reduce) {
+      .breathe .row, .flash .row { animation: none; }
+    }
+    .screen-toggle {
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: transparent;
+      touch-action: manipulation;
+    }
+    .screen-toggle:focus-visible { outline-offset: -5px; }
+    .chrome {
+      opacity: 1;
+      transition: opacity .2s ease, translate .2s ease, visibility .2s;
+    }
+    .quiet .chrome { opacity: 0; visibility: hidden; }
+    .masthead {
+      position: absolute;
+      z-index: 2;
+      top: calc(var(--safe-top) + 20px);
+      left: calc(var(--safe-left) + clamp(15px, 3vw, 46px));
+      right: calc(var(--safe-right) + clamp(15px, 3vw, 46px));
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .brand { display: flex; align-items: center; gap: 9px; }
+    .brand-mark { color: var(--accent); width: 17px; height: 17px; flex: none; }
+    h1 { font-size: 14px; font-weight: 670; letter-spacing: .09em; margin: 0; }
+    .wake-indicator { font-size: 11px; color: #c7bebf; }
+    .wake-indicator::before {
+      content: "";
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      margin: 0 7px 1px 0;
+      border-radius: 50%;
+      background: #95d6aa;
+      box-shadow: 0 0 7px #95d6aa55;
+    }
+    .frame {
+      position: absolute;
+      z-index: 2;
+      inset: var(--preview-top) calc(var(--safe-right) + clamp(15px, 3vw, 46px)) var(--preview-bottom) calc(var(--safe-left) + clamp(15px, 3vw, 46px));
+      border: 1px solid #33262e;
+      border-radius: 12px;
+      pointer-events: none;
+    }
+    .frame::before, .frame::after {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      border: solid #a35882;
+    }
+    .frame::before { inset: -1px auto auto -1px; border-width: 1px 0 0 1px; border-radius: 12px 0 0; }
+    .frame::after { inset: auto -1px -1px auto; border-width: 0 1px 1px 0; border-radius: 0 0 12px; }
+    .screen-hint {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #100c10;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: .1em;
+      white-space: nowrap;
+    }
+
+    .controls {
+      position: absolute;
+      z-index: 3;
+      left: calc(var(--safe-left) + 12px);
+      right: calc(var(--safe-right) + 12px);
+      bottom: calc(var(--safe-bottom) + 12px);
+      max-width: 880px;
+      max-height: var(--panel-cap);
+      margin-inline: auto;
+      overflow: auto;
+      overscroll-behavior: contain;
+      border: 1px solid #493c45;
+      border-radius: 19px;
+      background: #181418f2;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 15px 70px #000a;
+      scrollbar-width: thin;
+    }
+    .quiet .controls { translate: 0 12px; pointer-events: none; }
+    .control-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      padding: 19px 21px 17px;
+    }
+    .group { display: grid; gap: 13px; align-content: start; min-width: 0; }
+    .group + .group { border-left: 1px solid var(--line); padding-left: 24px; }
+    .field { display: grid; gap: 5px; min-width: 0; }
+    .field-title { font-size: 12px; font-weight: 650; letter-spacing: .06em; }
+    .sub-label { color: var(--muted); font-size: 11px; }
+    #message {
+      min-width: 0;
+      width: 100%;
+      height: 43px;
+      border: 1px solid #51414b;
+      border-radius: 8px;
+      padding: 0 11px;
+      background: #100d10;
+      font-size: 16px;
+    }
+    #message::placeholder { color: #a09199; }
+    .presets, .palette, .modes { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+    .chip, .action {
+      min-height: 36px;
+      padding: 5px 9px;
+      background: var(--button);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .chip[aria-pressed="true"] { color: #ffd1e9; border-color: #aa688d; background: #3b2633; }
+    @media (hover: hover) {
+      .chip:hover, .action:hover { border-color: #a47590; background: #352a33; }
+      .swatch:hover, .custom-color:hover { border-color: var(--accent); }
+    }
+    .palette { gap: 8px; }
+    .swatch, .custom-color {
+      display: grid;
+      place-items: center;
+      width: 37px;
+      height: 37px;
+      border: 1px solid #584851;
+      border-radius: 8px;
+      background: #211a20;
+      color: var(--ink);
+    }
+    .swatch::before {
+      content: "";
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      background: var(--swatch);
+      box-shadow: 0 0 10px var(--swatch-glow);
+    }
+    .swatch[aria-pressed="true"], .custom-color.selected { border-color: var(--accent); background: #422337; }
+    .custom-color { position: relative; border-style: dashed; cursor: pointer; }
+    .custom-color input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+    .custom-color svg { width: 15px; height: 15px; pointer-events: none; }
+    .slider-label { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    output { font-size: 11px; font-variant-numeric: tabular-nums; color: #ffc3e1; }
+    input[type="range"] { width: 100%; min-width: 0; height: 24px; margin: 0; accent-color: #ff80c2; cursor: pointer; }
+    .sliders { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .mode-row { display: flex; flex-wrap: wrap; align-items: end; gap: 9px 17px; }
+    .switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+      cursor: pointer;
+      color: var(--ink);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .switch input { accent-color: #ff80c2; width: 17px; height: 17px; margin: 0; }
+    .control-footer {
+      position: sticky;
+      bottom: 0;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 7px;
+      padding: 9px 12px;
+      border-top: 1px solid var(--line);
+      background: #171217f5;
+    }
+    .action {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      min-height: 36px;
+    }
+    .action svg { width: 15px; height: 15px; }
+    .action.primary { background: #f4a8cf; border-color: #f4a8cf; color: #20121c; font-weight: 700; }
+    .action.primary:hover { background: #ffbfdc; }
+    .action[aria-pressed="true"] { color: #ffd1e9; border-color: #aa688d; }
+    .app.compact .control-grid { grid-template-columns: 1fr; gap: 10px; padding: 12px 13px; }
+    .app.compact .group { gap: 9px; }
+    .app.compact .group + .group { border-left: 0; border-top: 1px solid var(--line); padding: 10px 0 0; }
+    .app.short .masthead { top: calc(var(--safe-top) + 8px); }
+    .app.short { --preview-top: calc(var(--safe-top) + 31px); --panel-cap: calc(100% - var(--safe-top) - var(--safe-bottom) - 86px); }
+    .app.short .control-grid { padding-block: 9px; gap: 15px; }
+    .app.short .group { gap: 7px; }
+    .app.short .field { gap: 3px; }
+    .app.short .group + .group { padding-left: 15px; }
+    .app.short.compact .group + .group { padding-left: 0; }
+    .app.short .control-footer { padding-block: 6px; }
+    .app.short .screen-hint { display: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .chrome { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app" id="app">
+    <div class="stage">
+      <div class="display" id="display" role="img" aria-label="一起发光">
+        <div class="row" id="row">
+          <p class="led-text still" id="still" dir="auto">一起发光</p>
+          <div class="track" id="track" aria-hidden="true" hidden></div>
+        </div>
+        <span class="led-text measure" id="measure" aria-hidden="true"></span>
+        <div class="mask" id="mask" aria-hidden="true"></div>
+      </div>
+      <button class="screen-toggle" id="screen-toggle" type="button" aria-controls="controls" aria-expanded="true" aria-label="隐藏控制面板"></button>
+    </div>
+
+    <header class="masthead chrome">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M0 0h4v4H0zm7 0h4v4H7zm7 0h4v4h-4zM0 7h4v4H0zm7 0h4v4H7zm7 0h4v4h-4zM0 14h4v4H0zm7 0h4v4H7zm7 0h4v4h-4z"/></svg>
+        <h1>LED 手持灯牌</h1>
+      </div>
+      <span class="wake-indicator" id="wake-indicator" hidden>屏幕常亮</span>
+    </header>
+    <div class="frame chrome" aria-hidden="true"><span class="screen-hint">轻触画面可隐藏面板</span></div>
+
+    <section class="controls chrome" id="controls" aria-label="灯牌设置">
+      <div class="control-grid">
+        <div class="group">
+          <label class="field">
+            <span class="field-title">弹幕内容</span>
+            <input id="message" type="text" placeholder="输入文字或 Emoji" autocomplete="off" spellcheck="false" value="一起发光">
+          </label>
+          <div class="field">
+            <span class="sub-label" id="preset-label">常用预设</span>
+            <div class="presets" id="presets" role="group" aria-labelledby="preset-label">
+              <button type="button" class="chip">欢迎回家 ✈️</button>
+              <button type="button" class="chip">加油！！🔥</button>
+              <button type="button" class="chip">求通过 🙏</button>
+              <button type="button" class="chip">生日快乐 🎂</button>
+            </div>
+          </div>
+        </div>
+        <div class="group">
+          <div class="field">
+            <span class="field-title" id="color-label">文字颜色</span>
+            <div class="palette" id="palette" role="group" aria-labelledby="color-label">
+              <button type="button" class="swatch" data-color="#ff334b" style="--swatch:#ff334b;--swatch-glow:#ff334b60" title="荧光红" aria-label="荧光红"></button>
+              <button type="button" class="swatch" data-color="#36f9ee" style="--swatch:#36f9ee;--swatch-glow:#36f9ee60" title="赛博青" aria-label="赛博青"></button>
+              <button type="button" class="swatch" data-color="#ff54af" style="--swatch:#ff54af;--swatch-glow:#ff54af60" title="应援粉" aria-label="应援粉"></button>
+              <button type="button" class="swatch" data-color="#ffca45" style="--swatch:#ffca45;--swatch-glow:#ffca4560" title="琥珀黄" aria-label="琥珀黄"></button>
+              <button type="button" class="swatch" data-color="#ffffff" style="--swatch:#fff;--swatch-glow:#ffffff60" title="纯白" aria-label="纯白"></button>
+              <label class="custom-color" id="custom-color-label" title="自定义颜色">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M13 6l5 5m-4 1-7 7H4v-3l7-7m2-4 2-2a2 2 0 0 1 3 0l3 3a2 2 0 0 1 0 3l-2 2z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <input type="color" id="custom-color" aria-label="自定义颜色" value="#ff54af">
+              </label>
+            </div>
+          </div>
+          <div class="sliders">
+            <div class="field">
+              <div class="slider-label"><label class="field-title" for="speed">滚动速度</label><output id="speed-value" for="speed">0 · 静止</output></div>
+              <input id="speed" type="range" min="0" max="10" step="1" value="0">
+            </div>
+            <div class="field">
+              <div class="slider-label"><label class="field-title" for="size">字体大小</label><output id="size-value" for="size">65%</output></div>
+              <input id="size" type="range" min="12" max="90" step="1" value="65" aria-describedby="size-description">
+              <span class="sr-only" id="size-description">以画面短边为基准，静止时自动适配长句。</span>
+            </div>
+          </div>
+          <div class="mode-row">
+            <div class="field">
+              <span class="field-title" id="mode-label">发光模式</span>
+              <div class="modes" id="modes" role="group" aria-labelledby="mode-label">
+                <button type="button" class="chip" data-mode="steady">常亮</button>
+                <button type="button" class="chip" data-mode="breathe">呼吸渐变</button>
+                <button type="button" class="chip" data-mode="flash">快闪应援</button>
+              </div>
+            </div>
+            <label class="switch"><input id="dots" type="checkbox" role="switch" checked>灯珠点阵质感</label>
+          </div>
+        </div>
+      </div>
+      <div class="control-footer">
+        <button type="button" class="action" id="rotate" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="10" width="12" height="10" rx="2"/><path d="M9 6a6 6 0 0 1 10 4m-3-1 3 2 2-3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span id="rotate-label">旋转 90° 横屏</span>
+        </button>
+        <button type="button" class="action" id="fullscreen" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span id="fullscreen-label">浏览器全屏</span>
+        </button>
+        <button type="button" class="action primary" id="show-banner">举牌显示</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    'use strict';
+    const byId = (id) => document.getElementById(id);
+    const app = byId('app');
+    const display = byId('display');
+    const controls = byId('controls');
+    const frame = document.querySelector('.frame');
+    const still = byId('still');
+    const track = byId('track');
+    const row = byId('row');
+    const measure = byId('measure');
+    const screenToggle = byId('screen-toggle');
+    const input = byId('message');
+    const speed = byId('speed');
+    const size = byId('size');
+    const customColor = byId('custom-color');
+    const dots = byId('dots');
+    const rotate = byId('rotate');
+    const fullscreen = byId('fullscreen');
+    const swatches = [...byId('palette').querySelectorAll('button')];
+    const presets = [...byId('presets').querySelectorAll('button')];
+    const modes = [...byId('modes').querySelectorAll('button')];
+    const storageKey = 'led-handheld-banner.settings.v1';
+    const defaults = { message: '一起发光', color: '#ff54af', speed: 0, size: 65, mode: 'steady', dots: true, landscape: false };
+
+    function readSettings() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(storageKey));
+        if (!saved || typeof saved !== 'object') return { ...defaults };
+        return {
+          message: typeof saved.message === 'string' ? saved.message : defaults.message,
+          color: /^#[0-9a-f]{6}$/i.test(saved.color) ? saved.color.toLowerCase() : defaults.color,
+          speed: Number.isInteger(saved.speed) && saved.speed >= 0 && saved.speed <= 10 ? saved.speed : defaults.speed,
+          size: Number.isInteger(saved.size) && saved.size >= 12 && saved.size <= 90 ? saved.size : defaults.size,
+          mode: modes.some((button) => button.dataset.mode === saved.mode) ? saved.mode : defaults.mode,
+          dots: typeof saved.dots === 'boolean' ? saved.dots : defaults.dots,
+          landscape: saved.landscape === true
+        };
+      } catch {
+        return { ...defaults };
+      }
+    }
+    const state = readSettings();
+    function saveSettings() {
+      try { localStorage.setItem(storageKey, JSON.stringify(state)); } catch { /* Storage is optional. */ }
+    }
+    function modulo(number, length) {
+      return ((number % length) + length) % length;
+    }
+
+    let panelOpen = true;
+    let pitch = 0;
+    let phase = 0;
+    let rate = 0;
+    let lastTick = null;
+    let motionFrame = 0;
+    let layoutFrame = 0;
+    let restartScroll = false;
+
+    function paintTrack() {
+      track.style.transform = 'translate3d(' + (-phase) + 'px,0,0)';
+    }
+    function animate(now) {
+      if (lastTick !== null) phase = modulo(phase + Math.min(now - lastTick, 48) * rate / 1000, pitch);
+      lastTick = now;
+      paintTrack();
+      motionFrame = requestAnimationFrame(animate);
+    }
+    function stopMotion() {
+      cancelAnimationFrame(motionFrame);
+      motionFrame = 0;
+      lastTick = null;
+    }
+    function startMotion() {
+      if (!motionFrame && state.speed && pitch && state.message.trim() && !document.hidden) {
+        motionFrame = requestAnimationFrame(animate);
+      }
+    }
+    function alignLayout() {
+      const portrait = matchMedia('(orientation: portrait)').matches;
+      app.classList.toggle('rotated', state.landscape && portrait);
+      const width = app.clientWidth;
+      const height = app.clientHeight;
+      app.classList.toggle('compact', width < 635);
+      app.classList.toggle('short', height < 560);
+      byId('rotate-label').textContent = state.landscape ? '恢复自动方向' : '旋转 90° 横屏';
+      rotate.setAttribute('aria-pressed', String(state.landscape));
+
+      // The editing preview fills the space above the panel. Hiding controls frees the whole screen.
+      app.style.setProperty('--preview-bottom', controls.offsetHeight + 23 + parseFloat(getComputedStyle(controls).bottom) + 'px');
+      const frameHeight = frame.offsetHeight;
+      const areaHeight = panelOpen ? Math.max(37, frameHeight - (height < 560 ? 6 : 24)) : height;
+      const centerY = panelOpen ? frame.offsetTop + frameHeight / 2 : height / 2;
+      display.style.setProperty('--dot', Math.max(3, Math.min(9, Math.round(Math.min(width, height) / 76))) + 'px');
+      row.style.top = centerY + 'px';
+      return { width, height, areaHeight };
+    }
+    function fitStill(messageWidth, targetFont, areaHeight) {
+      const safeWidth = Math.max(1, still.clientWidth - 8);
+      let font = Math.min(targetFont, areaHeight / 1.13, targetFont * safeWidth / Math.max(1, messageWidth));
+      // Keep longer messages readable by wrapping before shrinking to a single tiny line.
+      const wrapThreshold = Math.min(targetFont * .65, Math.max(18, areaHeight / 3.5));
+      if (font < wrapThreshold) {
+        font = wrapThreshold;
+        display.style.setProperty('--font-size', font + 'px');
+        for (let attempt = 0; still.offsetHeight > areaHeight && attempt < 24; attempt++) {
+          font *= .87;
+          display.style.setProperty('--font-size', font + 'px');
+        }
+      }
+      display.style.setProperty('--font-size', Math.max(.1, font) + 'px');
+    }
+    function layout() {
+      layoutFrame = 0;
+      const { width, height, areaHeight } = alignLayout();
+      const text = state.message;
+      display.setAttribute('aria-label', text.trim() || '空白灯牌');
+      const targetFont = Math.min(width, height) * state.size / 100;
+      display.style.setProperty('--font-size', targetFont + 'px');
+      const scrolling = Boolean(state.speed && text.trim());
+      display.classList.toggle('moving', scrolling);
+      still.hidden = scrolling;
+      track.hidden = !scrolling;
+      still.textContent = text;
+      measure.textContent = text;
+      const naturalWidth = measure.getBoundingClientRect()[app.classList.contains('rotated') ? 'height' : 'width'];
+      if (!scrolling) {
+        stopMotion();
+        pitch = 0;
+        phase = 0;
+        fitStill(naturalWidth, targetFont, areaHeight);
+        restartScroll = false;
+        return;
+      }
+
+      const font = Math.min(targetFont, areaHeight / 1.13);
+      display.style.setProperty('--font-size', font + 'px');
+      const messageWidth = measure.getBoundingClientRect()[app.classList.contains('rotated') ? 'height' : 'width'];
+      const gap = Math.max(width * .12, font * .55, 24);
+      const newPitch = messageWidth + gap;
+      if (restartScroll || !pitch) {
+        const lead = messageWidth < width ? (width - messageWidth) / 2 : Math.min(width * .07, 50);
+        phase = modulo(-lead, newPitch);
+      } else {
+        phase = modulo(phase * newPitch / pitch, newPitch);
+      }
+      pitch = newPitch;
+      rate = (22 + state.speed * 21) * Math.max(.75, Math.min(width / 520, 1.5));
+      const tilesNeeded = Math.ceil(width / pitch) + 1;
+      while (track.childElementCount < tilesNeeded) {
+        const tile = document.createElement('span');
+        tile.className = 'led-text tile';
+        tile.dir = 'auto';
+        track.append(tile);
+      }
+      while (track.childElementCount > tilesNeeded) track.lastElementChild.remove();
+      for (const tile of track.children) {
+        if (tile.textContent !== text) tile.textContent = text;
+        tile.style.width = pitch + 'px';
+      }
+      paintTrack();
+      restartScroll = false;
+      startMotion();
+    }
+    function scheduleLayout(reset = false) {
+      restartScroll ||= reset;
+      if (!layoutFrame) layoutFrame = requestAnimationFrame(layout);
+    }
+
+    function syncControls() {
+      if (input.value !== state.message) input.value = state.message;
+      speed.value = state.speed;
+      size.value = state.size;
+      dots.checked = state.dots;
+      customColor.value = state.color;
+      const speedText = state.speed ? String(state.speed) : '0 · 静止';
+      const sizeText = state.size + '%';
+      byId('speed-value').value = speedText;
+      byId('size-value').value = sizeText;
+      speed.setAttribute('aria-valuetext', speedText);
+      size.setAttribute('aria-valuetext', sizeText);
+      for (const button of swatches) button.setAttribute('aria-pressed', String(button.dataset.color === state.color));
+      for (const button of presets) button.setAttribute('aria-pressed', String(button.textContent === state.message));
+      for (const button of modes) button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
+      byId('custom-color-label').classList.toggle('selected', !swatches.some((button) => button.dataset.color === state.color));
+      byId('mask').hidden = !state.dots;
+      display.style.setProperty('--led', state.color);
+      display.classList.toggle('breathe', state.mode === 'breathe');
+      display.classList.toggle('flash', state.mode === 'flash');
+    }
+    function update(key, value, needsLayout = false, reset = false) {
+      if (state[key] === value) return;
+      state[key] = value;
+      syncControls();
+      saveSettings();
+      if (needsLayout) scheduleLayout(reset);
+    }
+    function setPanel(open, restoreFocus = false) {
+      panelOpen = open;
+      app.classList.toggle('quiet', !open);
+      if (!open && controls.contains(document.activeElement)) screenToggle.focus({ preventScroll: true });
+      controls.inert = !open;
+      controls.setAttribute('aria-hidden', String(!open));
+      screenToggle.setAttribute('aria-expanded', String(open));
+      screenToggle.setAttribute('aria-label', open ? '隐藏控制面板' : '打开控制面板');
+      if (open && restoreFocus) input.focus({ preventScroll: true });
+      scheduleLayout();
+    }
+
+    input.addEventListener('input', (event) => {
+      if (!event.isComposing) update('message', input.value, true, true);
+    });
+    input.addEventListener('compositionend', () => update('message', input.value, true, true));
+    for (const button of presets) button.addEventListener('click', () => update('message', button.textContent, true, true));
+    for (const button of swatches) button.addEventListener('click', () => update('color', button.dataset.color));
+    for (const button of modes) button.addEventListener('click', () => update('mode', button.dataset.mode));
+    customColor.addEventListener('input', () => update('color', customColor.value));
+    customColor.addEventListener('change', () => update('color', customColor.value));
+    dots.addEventListener('change', () => update('dots', dots.checked));
+    speed.addEventListener('input', () => update('speed', Number(speed.value), true));
+    size.addEventListener('input', () => update('size', Number(size.value), true));
+    rotate.addEventListener('click', () => update('landscape', !state.landscape, true));
+    screenToggle.addEventListener('click', (event) => setPanel(!panelOpen, event.detail === 0));
+    byId('show-banner').addEventListener('click', () => setPanel(false));
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !event.isComposing && !document.fullscreenElement && !document.webkitFullscreenElement) {
+        event.preventDefault();
+        setPanel(!panelOpen);
+      }
+    });
+
+    const root = document.documentElement;
+    const enterFullscreen = root.requestFullscreen || root.webkitRequestFullscreen;
+    const leaveFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+    function syncFullscreen() {
+      const full = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+      const installed = navigator.standalone || matchMedia('(display-mode: standalone)').matches ||
+        (!full && matchMedia('(display-mode: fullscreen)').matches);
+      fullscreen.hidden = !enterFullscreen || installed || (!(document.fullscreenEnabled || document.webkitFullscreenEnabled) && !full);
+      byId('fullscreen-label').textContent = full ? '退出全屏' : '浏览器全屏';
+      scheduleLayout();
+    }
+    fullscreen.addEventListener('click', async () => {
+      try {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+          if (leaveFullscreen) await leaveFullscreen.call(document);
+        } else {
+          await enterFullscreen.call(root);
+        }
+      } catch { /* The installed web app can still present fullscreen where supported. */ }
+    });
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    document.addEventListener('webkitfullscreenchange', syncFullscreen);
+
+    let wakeLock = null;
+    let requestingWake = false;
+    const wakeIndicator = byId('wake-indicator');
+    async function keepScreenAwake() {
+      if (!navigator.wakeLock || document.hidden || requestingWake || (wakeLock && !wakeLock.released)) return;
+      requestingWake = true;
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        wakeLock = lock;
+        wakeIndicator.hidden = lock.released || document.hidden;
+        lock.addEventListener('release', () => {
+          if (wakeLock !== lock) return;
+          wakeLock = null;
+          wakeIndicator.hidden = true;
+        }, { once: true });
+      } catch { /* Older browsers and low-power states can skip the lock. */ }
+      finally { requestingWake = false; }
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stopMotion();
+        wakeIndicator.hidden = true;
+      } else {
+        if (wakeLock && !wakeLock.released) wakeIndicator.hidden = false;
+        keepScreenAwake();
+        startMotion();
+      }
+    });
+    document.addEventListener('click', keepScreenAwake);
+    window.addEventListener('pageshow', () => { keepScreenAwake(); scheduleLayout(); });
+    window.addEventListener('resize', () => scheduleLayout());
+    if ('ResizeObserver' in window) new ResizeObserver(() => scheduleLayout()).observe(controls);
+    if (document.fonts) document.fonts.ready.then(() => scheduleLayout());
+
+    syncControls();
+    syncFullscreen();
+    keepScreenAwake();
+  </script>
+</body>
+</html>
