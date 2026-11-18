@@ -182,7 +182,11 @@
       font-weight: 900;
       line-height: 1.12;
       letter-spacing: .025em;
-      text-shadow: 0 0 .018em currentColor, 0 0 .06em currentColor, 0 0 .16em currentColor, 0 0 .29em currentColor;
+      text-shadow: 0 0 .025em currentColor;
+      text-shadow: 0 0 .012em currentColor,
+        0 0 .04em color-mix(in srgb, currentColor 65%, transparent),
+        0 0 .105em color-mix(in srgb, currentColor 42%, transparent),
+        0 0 .2em color-mix(in srgb, currentColor 23%, transparent);
       unicode-bidi: plaintext;
       tab-size: 4;
     }
@@ -191,6 +195,9 @@
       text-align: center;
       white-space: break-spaces;
       overflow-wrap: anywhere;
+    }
+    .app:not(.quiet) .still {
+      margin-inline: calc(max(var(--safe-left), var(--safe-right)) + clamp(23px, 4vw, 70px));
     }
     .tile, .measure {
       display: block;
